@@ -17,7 +17,8 @@ function varargout = BlobMaster3000(varargin)
 %      existing singleton*.  Starting from the left, property value pairs are
 %      applied to the GUI before BlobMaster3000_OpeningFcn gets called.  An
 %      unrecognized property name or invalid value makes property application
-%      stop.  All inputs are passed to BlobMaster3000_OpeningFcn via varargin.
+%      stop.  All inputs are passed to BlobMaster3000_OpeningFcn via
+%      varargin. 
 %
 %      *See GUI Options on GUIDE's Tools menu.  Choose "GUI allows only one
 %      instance to run (singleton)".
@@ -2444,10 +2445,8 @@ function [frame, originalFrame] = prepareFrame(handles, CurrFrame)
 
 if handles.Tracking.PrecompBlobs.Logical && get(handles.cb_use_gen_blobs, 'Value')
     
-    % open the file
-    %     fid=fopen([handles.CurrFilePath, handles.CurrTrial, '_blobs.txt']);
-    try
-        
+
+    try        
         fseek(handles.fid, handles.Tracking.PrecompBlobs.Lines(CurrFrame), 'bof');
         C = fgetl(handles.fid);
         C = eval(['[',C,']']);
@@ -2471,7 +2470,6 @@ if handles.Tracking.PrecompBlobs.Logical && get(handles.cb_use_gen_blobs, 'Value
         return
     catch
         fail=1;
-        %         fclose(fid);
     end
     
 end
@@ -2481,9 +2479,6 @@ if ~get(handles.cb_use_gen_blobs, 'Value') || (~handles.Tracking.PrecompBlobs.Lo
     frame = uint8(rgb2gray(undistortImage(read(handles.Video.Obj, CurrFrame), handles.cameraParams)));
     originalFrame = frame;
 end
-% if max(frame)>1
-%     frame = frame/255;
-% end
 
 % Get settings set by user (e.g. invert image, subtract background, etc)
 SET.FlatField = get(handles.cb_flatfield, 'Value');
@@ -2556,12 +2551,10 @@ if SET.Sharpen
     frame = imsharpen(frame);
 end
 
-
 if SET.InvertIMG
     % Invert frame
     frame = uint8(abs(double(frame)-255));
 end
-
 
 if SET.SubtractBG
     
