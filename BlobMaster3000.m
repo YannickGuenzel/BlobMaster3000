@@ -1625,7 +1625,13 @@ else
     SET.Sharpen = get(handles.cb_sharpen, 'Value');
     
     % Get step size
-    Steps = str2double(get(handles.ed_fraction_for_BG, 'String'));
+    if contains(get(handles.ed_fraction_for_BG, 'String'), ':')
+        Steps = eval(get(handles.ed_fraction_for_BG, 'String'));
+        BG_Frames = Steps;
+    else
+        Steps = str2double(get(handles.ed_fraction_for_BG, 'String'));
+        BG_Frames = 1:Steps:handles.Video.NrFrames;
+    end
     
     % Preallocation
     BG = zeros(...
@@ -1635,7 +1641,7 @@ else
     % Indicate that something is happening
     f = waitbar(0,'Please wait...');
     
-    BG_Frames = 1:Steps:handles.Video.NrFrames;
+    
     cnt_frame = 0;
     for iFrame = BG_Frames
         
