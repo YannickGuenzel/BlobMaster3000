@@ -18,7 +18,7 @@ function varargout = BlobMaster3000(varargin)
 %      applied to the GUI before BlobMaster3000_OpeningFcn gets called.  An
 %      unrecognized property name or invalid value makes property application
 %      stop.  All inputs are passed to BlobMaster3000_OpeningFcn via
-%      varargin. 
+%      varargin.
 %
 %      *See GUI Options on GUIDE's Tools menu.  Choose "GUI allows only one
 %      instance to run (singleton)".
@@ -27,7 +27,7 @@ function varargout = BlobMaster3000(varargin)
 
 % Edit the above text to modify the response to help BlobMaster3000
 
-% Last Modified by GUIDE v2.5 23-Jun-2021 14:35:45
+% Last Modified by GUIDE v2.5 05-Sep-2024 10:33:10
 
 % Begin initialization code - DO NOT EDIT
 gui_Singleton = 1;
@@ -47,10 +47,6 @@ else
     gui_mainfcn(gui_State, varargin{:});
 end
 % End initialization code - DO NOT EDIT
-
-
-
-
 
 
 
@@ -123,16 +119,53 @@ set(handles.sl_main, 'Value', handles.CurrFrame)
 set(handles.ed_currentFrame, 'String', num2str(handles.CurrFrame))
 
 % Prepare frame (thresholding etc)
-frame = prepareFrame(handles, handles.CurrFrame);
+[frame,~] = prepareFrame(handles, handles.CurrFrame);
 
 % Display frame
 axes(handles.ax_main); cla
-imshow(frame);
+imagesc(frame);
+axis(handles.ax_main, 'equal', 'tight', 'off')
+colormap(handles.ax_main, gray(1000))
 hold on
 
 % Depict Centroids
 mkr = scatter(handles.Tracking.X(handles.CurrFrame,:), handles.Tracking.Y(handles.CurrFrame,:),...
     [],handles.Tracking.Color,'filled'); mkr.MarkerEdgeColor = [0 0 0]; clear mkr;
+
+% Zoom in
+if str2double(get(handles.ed_currentZoom, 'String')) ~= 0
+    % Get the dimensions to crop the image
+    crop_range = str2double(get(handles.ed_currentZoom, 'String'));
+    crop_range = [crop_range, crop_range] .* [(size(frame,1)/max(size(frame))), (size(frame,2)/max(size(frame)))];
+    % Get currently selected animal
+    currAni = get(handles.pop_aniList, 'Value');
+    % Get the current location of the animal
+    X = handles.Tracking.X(:,currAni);
+    Y = handles.Tracking.Y(:,currAni);
+    % Fill tracking if there is nothing
+    X = fillmissing(X,'nearest');
+    Y = fillmissing(Y,'nearest');
+    % Skip if there is no tracknig at all
+    if sum(isnan(X))~=length(X)
+        % Get the centroid location
+        if handles.CurrFrame > 1
+            C = [X(handles.CurrFrame-1), Y(handles.CurrFrame-1)];
+        else
+            C = [X(handles.CurrFrame), Y(handles.CurrFrame)];
+        end
+        % Crop
+        x_range = [C(1)-crop_range(2), C(1)+crop_range(2)];
+        y_range = [C(2)-crop_range(1), C(2)+crop_range(1)];
+    else
+        x_range = [1 size(frame,2)];
+        y_range = [1 size(frame,1)];
+    end%if
+else
+    x_range = [1 size(frame,2)];
+    y_range = [1 size(frame,1)];
+end%if do crop
+xlim(x_range)
+ylim(y_range)
 
 % Indicate tracked animals
 if get(handles.tg_indicateBlobs, 'Value') && sum(~isnan(handles.Tracking.X(handles.CurrFrame,:)))>0
@@ -140,7 +173,7 @@ if get(handles.tg_indicateBlobs, 'Value') && sum(~isnan(handles.Tracking.X(handl
     aniList = get(handles.pop_aniList, 'String');
     % Get center of IDs
     %     ID_center = [nanmedian(handles.Tracking.X(handles.CurrFrame,:)); nanmedian(handles.Tracking.Y(handles.CurrFrame,:))];
-    
+
     if handles.Tracking.nAnimals == 1
         C = [handles.Tracking.X(handles.CurrFrame,1)-1, handles.Tracking.Y(handles.CurrFrame,1)+1];
         idx=1;
@@ -150,21 +183,21 @@ if get(handles.tg_indicateBlobs, 'Value') && sum(~isnan(handles.Tracking.X(handl
         else
             C = [median(handles.Tracking.X(handles.CurrFrame,:)), median(handles.Tracking.Y(handles.CurrFrame,:))];
             idx=1;
-        end        
-    end
-    
-    ID_maxDist = mean(size(handles.medianBG))*0.05;
-    for iAni = 1:handles.Tracking.nAnimals
-       try
-        if handles.n_ani_clust > 1 || handles.Tracking.nAnimals == 1
-            ID_center = C(idx(iAni),:)';
-        else
-           ID_center = [nanmedian(handles.Tracking.X(handles.CurrFrame,:)); nanmedian(handles.Tracking.Y(handles.CurrFrame,:))];
         end
-       catch
-           ID_center = [0; 0];
-       end
-       
+    end
+
+    ID_maxDist = mean([range(x_range), range(y_range)])*0.05;
+    for iAni = 1:handles.Tracking.nAnimals
+        try
+            if handles.n_ani_clust > 1 || handles.Tracking.nAnimals == 1
+                ID_center = C(idx(iAni),:)';
+            else
+                ID_center = [nanmedian(handles.Tracking.X(handles.CurrFrame,:)); nanmedian(handles.Tracking.Y(handles.CurrFrame,:))];
+            end
+        catch
+            ID_center = [0; 0];
+        end
+
         % Get angle to ID center
         ID_dir = [handles.Tracking.X(handles.CurrFrame, iAni); handles.Tracking.Y(handles.CurrFrame, iAni)]- ID_center;
         if ID_dir(1)==0 && ID_dir(2)==0
@@ -187,16 +220,13 @@ if get(handles.tg_indicateBlobs, 'Value') && sum(~isnan(handles.Tracking.X(handl
         text(ID_pos_text(1), ID_pos_text(2), aniList(iAni,:), 'Color', handles.Tracking.Color(iAni,:), 'Interpreter', 'none', 'HorizontalAlignment', ID_align)
         plot([handles.Tracking.X(handles.CurrFrame,iAni), ID_pos_line(1)],[handles.Tracking.Y(handles.CurrFrame,iAni), ID_pos_line(2)], 'Color', handles.Tracking.Color(iAni,:), 'LineWidth', 0.5)
     end%iAni
-    
-end% if indicate tracked animals
 
+end% if indicate tracked animals
 
 % Depict everything
 drawnow;
 hold off
-
 clear frame
-
 
 
 
@@ -267,6 +297,11 @@ function ed_startTrack_CreateFcn(hObject, eventdata, handles)
 if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
     set(hObject,'BackgroundColor','white');
 end
+% --- track_steps
+function ed_track_steps_CreateFcn(hObject, eventdata, handles)
+if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
+    set(hObject,'BackgroundColor','white');
+end
 % --- stopDel
 function ed_stopDel_CreateFcn(hObject, eventdata, handles)
 if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
@@ -282,11 +317,19 @@ function ed_threshold_CreateFcn(hObject, eventdata, handles)
 if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
     set(hObject,'BackgroundColor','white');
 end
-% --- track_steps
-function ed_track_steps_CreateFcn(hObject, eventdata, handles)
+% --- zoom
+function ed_currentZoom_CreateFcn(hObject, eventdata, handles)
+% hObject    handle to ed_currentZoom (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    empty - handles not created until after all CreateFcns called
+
+% Hint: edit controls usually have a white background on Windows.
+%       See ISPC and COMPUTER.
 if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
     set(hObject,'BackgroundColor','white');
 end
+
+
 
 
 % Style: POPUPMENU
@@ -310,6 +353,7 @@ function pop_fillMissingMethod_CreateFcn(hObject, eventdata, handles)
 if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
     set(hObject,'BackgroundColor','white');
 end
+
 
 
 
@@ -362,11 +406,8 @@ handles = updateFigure(handles);
 % Update handles structure
 guidata(hObject, handles);
 
-
-
-% --------------------------------------------------------------------
 function mn_tracking_prudence_Callback(hObject, eventdata, handles)
-% Nothing is happeing here
+% Nothing is happening here
 
 function mn_tracking_prudence_0_Callback(hObject, eventdata, handles)
 handles.cautious = 1;
@@ -388,8 +429,6 @@ handles.cautious = 4;
 % Update handles structure
 guidata(hObject, handles);
 
-
-
 function mn_openVideo_Callback(hObject, eventdata, handles)
 
 % Ask the user to specify a video file
@@ -406,7 +445,7 @@ handles.Video.NrFrames = get(handles.Video.Obj, 'numberOfFrames')-1;
 set(handles.ed_genBlob_region, 'String', ['[1:1:', num2str(handles.Video.NrFrames),']'])
 
 % Already create background variable
-handles.medianBG = zeros(handles.Video.Obj.Width, handles.Video.Obj.Height);
+handles.meanBG = zeros(handles.Video.Obj.Width, handles.Video.Obj.Height, 3);
 
 % Indicate that something is happening
 waitbar(0.5, f); pause(0.1)
@@ -431,9 +470,9 @@ if isfile([handles.CurrFilePath, handles.CurrTrial, '_blobs.txt'])
         fgetl(handles.fid);
         handles.Tracking.PrecompBlobs.Lines(iFrame) = ftell(handles.fid);
     end
-    
+
     set(handles.cb_use_gen_blobs, 'Enable', 'on');
-    
+
 else
     handles.Tracking.PrecompBlobs.Logical = 0;
     set(handles.cb_use_gen_blobs, 'Enable', 'off');
@@ -480,16 +519,11 @@ handles = UnlockOptions(handles, 'VideoLoaded');
 % Update handles structure
 guidata(hObject, handles);
 
-
-
-% -------------------------------------------------------------------------
 function mn_masks_main_Callback(hObject, eventdata, handles)
 % Nothing is happening here
 
-
-% -------------------------------------------------------------------------
 function mn_masks_rectangles_Callback(hObject, eventdata, handles)
-% Nothing is happeing here
+% Nothing is happening here
 
 function mn_masks_4_rectangles_Callback(hObject, eventdata, handles)
 handles = RectangularMasks(handles, 4);
@@ -511,10 +545,8 @@ handles = RectangularMasks(handles, 1);
 % Update handles structure
 guidata(hObject, handles);
 
-
-% -------------------------------------------------------------------------
 function mn_masks_circles_Callback(hObject, eventdata, handles)
-% Nothing is happeing here
+% Nothing is happening here
 
 function mn_masks_4_circles_Callback(hObject, eventdata, handles)
 handles = CircularMasks(handles, 4);
@@ -535,11 +567,6 @@ function mn_masks_1_circles_Callback(hObject, eventdata, handles)
 handles = CircularMasks(handles, 1);
 % Update handles structure
 guidata(hObject, handles);
-
-
-
-
-
 
 function mn_openTracks_Callback(hObject, eventdata, handles)
 
@@ -572,7 +599,7 @@ handles.Tracking.Y = nan(handles.Video.NrFrames, handles.Tracking.nAnimals);
 
 
 for iAni = 1:handles.Tracking.nAnimals
-    
+
     if iscell(IDs)
         idx = find(strcmp(Tracks.id, IDs{iAni}));
     else
@@ -580,10 +607,10 @@ for iAni = 1:handles.Tracking.nAnimals
     end
     handles.Tracking.X(1:length(idx), iAni) = Tracks.pos_x(idx);
     handles.Tracking.Y(1:length(idx), iAni) = Tracks.pos_y(idx);
-    
+
     % Indicate progress
     waitbar(iAni/handles.Tracking.nAnimals, f)
-    
+
 end%iAni
 
 handles.Tracking.X = handles.Tracking.X(1:handles.Video.NrFrames,:);
@@ -618,60 +645,60 @@ function mn_save_Callback(hObject, eventdata, handles)
 
 % Determine final number of rows
 try
-nRows = handles.Video.NrFrames * handles.Tracking.nAnimals;
-% Get list of IDs
-aniList = get(handles.pop_aniList, 'String');
-% Preallocation
-cnt = nan(nRows,1);
-frame = nan(nRows,1);
-pos_x = nan(nRows,1);
-pos_y = nan(nRows,1);
-id = cell(nRows,1);
+    nRows = handles.Video.NrFrames * handles.Tracking.nAnimals;
+    % Get list of IDs
+    aniList = get(handles.pop_aniList, 'String');
+    % Preallocation
+    cnt = nan(nRows,1);
+    frame = nan(nRows,1);
+    pos_x = nan(nRows,1);
+    pos_y = nan(nRows,1);
+    id = cell(nRows,1);
 
-% Check whether to scale back tracking
-if isfield(handles.Tracking, 'Adjustments')
-    answer = questdlg('Would you like to re-center and re-normalize the tracking?', ...
-        'Re-scale data',...
-        'Yes', 'No', 'Yes');
-    switch answer2
-        case 'Yes'
-            DoRescale = 1;
-        case 'No'
-            DoRescale = 0;
-    end
-else
-    DoRescale = 0;
-end
-
-% Iterate over all frames and create a table with the results in the same
-% format as Tracktor
-cnt_helper = 1;
-f = waitbar(0, 'Please wait while we save your tracking...');
-for iFrame = 1:handles.Video.NrFrames
-    for iAni = 1:handles.Tracking.nAnimals
-        
-        cnt(cnt_helper) = cnt_helper-1;
-        frame(cnt_helper) = iFrame;
-        if DoRescale
-            pos_x(cnt_helper) = (handles.Tracking.X(iFrame, iAni)-handles.Tracking.Adjustments(1))/handles.Tracking.Adjustments(3);
-            pos_y(cnt_helper) = (handles.Tracking.Y(iFrame, iAni)-handles.Tracking.Adjustments(2))/handles.Tracking.Adjustments(3);
-        else
-            pos_x(cnt_helper) = handles.Tracking.X(iFrame, iAni);
-            pos_y(cnt_helper) = handles.Tracking.Y(iFrame, iAni);
+    % Check whether to scale back tracking
+    if isfield(handles.Tracking, 'Adjustments')
+        answer = questdlg('Would you like to re-center and re-normalize the tracking?', ...
+            'Re-scale data',...
+            'Yes', 'No', 'Yes');
+        switch answer
+            case 'Yes'
+                DoRescale = 1;
+            case 'No'
+                DoRescale = 0;
         end
-        id{cnt_helper} = aniList(iAni,:);
-        
-        cnt_helper = cnt_helper+1;
-        
-    end%iAni
-    
-    waitbar(iFrame/handles.Video.NrFrames, f)
-end%iFrame
+    else
+        DoRescale = 0;
+    end
 
-finalTable = table(cnt, frame, pos_x, pos_y, id);
-writetable(finalTable,[handles.CurrFilePath, handles.CurrTrial, '_tracked.csv'])
+    % Iterate over all frames and create a table with the results in the same
+    % format as Tracktor
+    cnt_helper = 1;
+    f = waitbar(0, 'Please wait while we save your tracking...');
+    for iFrame = 1:handles.Video.NrFrames
+        for iAni = 1:handles.Tracking.nAnimals
 
-close(f)
+            cnt(cnt_helper) = cnt_helper-1;
+            frame(cnt_helper) = iFrame;
+            if DoRescale
+                pos_x(cnt_helper) = (handles.Tracking.X(iFrame, iAni)-handles.Tracking.Adjustments(1))/handles.Tracking.Adjustments(3);
+                pos_y(cnt_helper) = (handles.Tracking.Y(iFrame, iAni)-handles.Tracking.Adjustments(2))/handles.Tracking.Adjustments(3);
+            else
+                pos_x(cnt_helper) = handles.Tracking.X(iFrame, iAni);
+                pos_y(cnt_helper) = handles.Tracking.Y(iFrame, iAni);
+            end
+            id{cnt_helper} = aniList(iAni,:);
+
+            cnt_helper = cnt_helper+1;
+
+        end%iAni
+
+        waitbar(iFrame/handles.Video.NrFrames, f)
+    end%iFrame
+
+    finalTable = table(cnt, frame, pos_x, pos_y, id);
+    writetable(finalTable,[handles.CurrFilePath, handles.CurrTrial, '_tracked.csv'])
+
+    close(f)
 
 end
 
@@ -689,10 +716,6 @@ guidata(hObject, handles);
 
 
 
-
-
-
-
 %--------------------------------------------------------------------------
 %                              Callbacks
 %--------------------------------------------------------------------------
@@ -702,7 +725,6 @@ guidata(hObject, handles);
 % hObject    -   handle to FCN (see GCBO)
 % eventdata  -   reserved - to be defined in a future version of MATLAB
 % handles    -   structure with handles and user data (see GUIDATA)
-
 
 % Style: CHECKBOX ---------------------------------------------------------
 function cb_adjust_contrast_Callback(hObject, eventdata, handles)
@@ -770,13 +792,15 @@ if hObject.Value
         hObject.Value = 0;
     end
     handles = UnlockOptions(handles, 'BackgroundSubtracted');
-else    
+else
     handles.Video.Obj = VideoReader([handles.CurrFilePath, handles.CurrFile]);
     handles = UnlockOptions(handles, 'BackgroundNotSubtracted');
 end
 updateFigure(handles)
 % Update handles structure
 guidata(hObject, handles);
+
+
 
 
 % Style: EDIT -------------------------------------------------------------
@@ -790,32 +814,32 @@ AniList = get(handles.pop_aniList, 'String');
 
 % Check whether ID is unique
 if sum(strcmp(AniList, newAni)) > 0
-    
+
     % Error: new ID is already given
     beep
     msgbox('IDs must be unique', 'Invalid ID', 'error');
-    
+
 else
-    
+
     % Concatenate lists
     AniList{end+1,1} = newAni;
-    
+
     % Add columns in tracking structure
     handles.Tracking.X = [handles.Tracking.X, nan(handles.Video.NrFrames, 1)];
     handles.Tracking.Y = [handles.Tracking.Y, nan(handles.Video.NrFrames, 1)];
     handles.Tracking.Manual = [handles.Tracking.Manual, zeros(handles.Video.NrFrames, 1)];
     handles.Tracking.nAnimals = length(AniList);
-    
+
     % Update popmenu
     set(handles.pop_aniList, 'String', AniList);
     set(handles.pop_aniList, 'Value', length(AniList));
-    
+
     % Update settings about number of animals
     set(handles.ed_nAnimals, 'String', num2str(length(AniList)))
-    
+
     % Update colors
     handles.Tracking.Color = jet(length(AniList));
-    
+
 end
 
 % Update th edit field
@@ -876,25 +900,25 @@ else
     for iAni = 1:nAni
         list_string{iAni,1} = ['A', sprintf('%02d', iAni)];
     end%iAni
-    
+
     % Update pop_aniList
     set(handles.pop_aniList, 'Value', 1)
     set(handles.pop_aniList, 'String', list_string)
-    
+
     % Create structure to save tracking to
     handles.Tracking.X = nan(handles.Video.NrFrames, nAni);
     handles.Tracking.Y = nan(handles.Video.NrFrames, nAni);
-    
+
     % Keep track of manual annotations
     handles.Tracking.Manual = zeros(handles.Video.NrFrames, nAni);
-    
+
     % Save number of animals, too
     handles.Tracking.nAnimals = nAni;
-    
+
     % Set color for each animal
     handles.Tracking.Color = jet(nAni);
-    
-    
+
+
 end%if number
 
 % Enable options
@@ -945,6 +969,28 @@ function ed_track_steps_Callback(hObject, eventdata, handles)
 
 % Update handles structure
 guidata(hObject, handles);
+
+function ed_currentZoom_Callback(hObject, eventdata, handles)
+
+% Check value
+currVal = str2double(get(handles.ed_currentZoom, 'String'));
+if isnumeric(currVal) && ~isnan(currVal)
+    currVal = round(currVal);
+else
+    currVal = 0;
+end
+if currVal<0
+    currVal = 0;
+end
+set(handles.ed_currentZoom, 'String', num2str(currVal));
+
+% Update figure
+handles = updateFigure(handles);
+
+% Update handles structure
+guidata(hObject, handles);
+
+
 
 
 % Style: RADIOBUTTON ------------------------------------------------------
@@ -1181,7 +1227,7 @@ str={'{\bfHelp: 2.3 Threshold}';...
     ' map of ones (white) and zeros (black). Therefore, applying a reasonable',...
     ' threshold is crucial to get well-tracked individuals.', ...
     ' Consequently, it enables following operations. As the video image is',...
-    ' converted to grayscale, threhshold values should be between',...
+    ' converted to grayscale, threshold values should be between',...
     ' 0 (= no threshold is applied), and 1 (only maximally bright pixels are detected).']};
 
 % Display help
@@ -1218,7 +1264,7 @@ str={'{\bfHelp: Track!}';...
     ' merged as the animals get too close to each other. This results in a',...
     ' so-called {\itcrossing} with the individual IDs sharing the same centroid',...
     ' (= center of the blob). This can be detected by the program and stops the',...
-    ' tracking automatically if the crossing cannot be resolved. Now the',... 
+    ' tracking automatically if the crossing cannot be resolved. Now the',...
     ' user can fast-forward the video until the blobs are separated again,',...
     ' re-assign their identities, go back to the point the tracking stopped,',...
     ' and set a new range for tracking (usually start at the frame the',...
@@ -1266,6 +1312,29 @@ set(hObject, 'Value', 0)
 % Update handles structure
 guidata(hObject, handles);
 
+function rd_help_zoom_Callback(hObject, eventdata, handles)
+% String to display
+str = {'{\bfHelp: Zoom on current animal}';...
+    ['To zoom into the image, focussing on the currently selected animal,',...
+    ' simply write how many pixels around the centroid of this animal',...
+    ' should be cropped out. For example, a value of 200 means that',...
+    ' a box +/- 200px around the centroid will be used. A value of',...
+    ' zeros means no zoom.']};
+
+% Display help
+createmode.WindowStyle = 'modal';
+createmode.Interpreter = 'tex';
+msgbox(str, 'Zoom on current animal', 'help', createmode);
+
+% Set back button's value
+set(hObject, 'Value', 0)
+
+% Update handles structure
+guidata(hObject, handles);
+
+
+
+
 % Style: PUSHBUTTON -------------------------------------------------------
 function pb_auto_assign_Callback(hObject, eventdata, handles)
 
@@ -1298,28 +1367,34 @@ set(hObject, 'BackgroundColor', [0.8 0.93 0.98])
 guidata(hObject, handles);
 
 function pb_delete_ID_Callback(hObject, eventdata, handles)
-% Get current animal
-currAni_idx = get(handles.pop_aniList, 'Value');
-% Remove tracking
-handles.Tracking.X = handles.Tracking.X(:,[1:handles.Tracking.nAnimals]~=currAni_idx);
-handles.Tracking.Y = handles.Tracking.Y(:,[1:handles.Tracking.nAnimals]~=currAni_idx);
-% Remove color
-handles.Tracking.Color = handles.Tracking.Color([1:handles.Tracking.nAnimals]~=currAni_idx,:);
-% Remove manual tracking
-handles.Tracking.Manual = handles.Tracking.Manual(:,[1:handles.Tracking.nAnimals]~=currAni_idx);
-% Reduce animal count by one
-handles.Tracking.nAnimals = handles.Tracking.nAnimals-1;
-% Remove entry from popup menu
-list = get(handles.pop_aniList, 'String');
-list = list(find([1:handles.Tracking.nAnimals]~=currAni_idx));
-set(handles.pop_aniList, 'Value', handles.Tracking.nAnimals);
-set(handles.pop_aniList, 'String', list)
-% Change number 
-set(handles.ed_nAnimals , 'String', handles.Tracking.nAnimals);
-% Update figure
-handles = updateFigure(handles);
-
-
+if length(get(handles.pop_aniList, 'String'))>1
+    % Get current animal
+    currAni_idx = get(handles.pop_aniList, 'Value');
+    ind_valid = find([1:handles.Tracking.nAnimals]~=currAni_idx);
+    % Remove tracking
+    handles.Tracking.X = handles.Tracking.X(:, ind_valid);
+    handles.Tracking.Y = handles.Tracking.Y(:, ind_valid);
+    % Remove color
+    handles.Tracking.Color = handles.Tracking.Color(ind_valid,:);
+    % Remove manual tracking
+    handles.Tracking.Manual = handles.Tracking.Manual(:,ind_valid);
+    % Reduce animal count by one
+    handles.Tracking.nAnimals = handles.Tracking.nAnimals-1;
+    % Remove entry from popup menu
+    list = get(handles.pop_aniList, 'String');
+    list = list(ind_valid);
+    set(handles.pop_aniList, 'Value', 1);
+    set(handles.pop_aniList, 'String', list)
+    % Change number
+    set(handles.ed_nAnimals , 'String', handles.Tracking.nAnimals);
+    % Update figure
+    handles = updateFigure(handles);
+    % Update handles structure
+    guidata(hObject, handles);
+else
+    beep
+    msgbox('Cannot remove the last ID.', 'Invalid input', 'error');
+end
 
 function pb_generate_blobs_Callback(hObject, eventdata, handles)
 
@@ -1344,7 +1419,7 @@ for iFrame = 1:handles.Video.NrFrames
         coord = 'NaN';
     else
         coordinates = find(prepareFrame(handles, iFrame))';
-        
+
         % Further compression
         coord = num2str(coordinates(1));
         % Iterate over all coordinates
@@ -1369,7 +1444,7 @@ for iFrame = 1:handles.Video.NrFrames
             coord = [coord, ',', num2str(coordinates(length(coordinates)))];
         end
     end%if
-    
+
     % Write to file
     fprintf(fid, '%s\n%s\n%s', coord);
     waitbar(iFrame/handles.Video.NrFrames,f, ['Please wait... Current frame: ', num2str(iFrame)])
@@ -1408,28 +1483,31 @@ currAni = get(handles.pop_aniList, 'Value');
 
 % Check whether to annotate only this frame or multiple in a row
 if get(handles.cb_nextFrame, 'Value')
-    
+
     % Variable to check whether to continue
     DoContinue = 1;
-    
+
     % Tell the user what can be done
     set(handles.tx_static_title, 'String',...
         'Click on Animal. Then, use L-/R-arrow to change frame and any other key to quit')
-    
+
     steps = abs(str2double(get(handles.ed_track_steps, 'String')));
-    
+    if isnan(steps)
+        steps = 1;
+    end
+
     while DoContinue
-        
+
         % Get the animal's current position
         currPos = ginputBM(1, handles.Tracking.Color(currAni,:));
-        
+
         % Save position to tracking structure
         handles.Tracking.X(handles.CurrFrame, currAni) = currPos(1);
         handles.Tracking.Y(handles.CurrFrame, currAni) = currPos(2);
-        
+
         % Keep track of manual annotation
         handles.Tracking.Manual(handles.CurrFrame, currAni) = 1;
-        
+
         k = waitforbuttonpress;% 28 leftarrow | 29 rightarrow
         value = double(get(gcf,'CurrentCharacter'));
         switch value
@@ -1444,28 +1522,28 @@ if get(handles.cb_nextFrame, 'Value')
         end
         % Update plot
         handles = updateFigure(handles);
-        
+
     end% while
-    
+
 else%if one or more frames
-    
+
     % Tell the user what can be done
     set(handles.tx_static_title, 'String',...
         'Click on Animal')
-    
+
     % Get the animal's current position
     currPos = ginputBM(1, handles.Tracking.Color(currAni,:));
-    
+
     % Save position to tracking structure
     handles.Tracking.X(handles.CurrFrame, currAni) = currPos(1);
     handles.Tracking.Y(handles.CurrFrame, currAni) = currPos(2);
-    
+
     % Keep track of manual annotation
     handles.Tracking.Manual(handles.CurrFrame, currAni) = 1;
-    
+
     % Update figure
     handles = updateFigure(handles);
-    
+
 end%if one or more frames
 
 % Indicate that operations are over
@@ -1487,7 +1565,7 @@ startDel = str2double(get(handles.ed_startDel, 'String'));
 stopDel = str2double(get(handles.ed_stopDel, 'String'));
 
 if ~isnan(startDel) && ~isnan(stopDel) && startDel<=stopDel
-    
+
     if get(handles.cb_deleteAll, 'Value')
         % Overwrite position in tracking structure with NaNs
         handles.Tracking.X(startDel:stopDel, :) = NaN;
@@ -1503,10 +1581,10 @@ if ~isnan(startDel) && ~isnan(stopDel) && startDel<=stopDel
         % Reset record of manual annotation
         handles.Tracking.Manual(startDel:stopDel, currAni) = 0;
     end
-    
+
     % Update plot
     handles = updateFigure(handles);
-    
+
 else
     beep
     msgbox({'Start and stop frame must be integer numbers'; 'and the start frame has to be smaller or equal than the stop frame'}, 'Invalid input', 'error');
@@ -1532,45 +1610,45 @@ startFill = str2double(get(handles.ed_startFillMissing, 'String'));
 stopFill = str2double(get(handles.ed_stopFillMissing, 'String'));
 
 if ~isnan(startFill) && ~isnan(stopFill) && startFill < stopFill
-    
+
     idx = get(handles.pop_fillMissingMethod, 'Value');
     MethodList = get(handles.pop_fillMissingMethod, 'String');
     FillMethod = MethodList{idx};
-    
+
     % To keep track of manual corrections, detect which frames for
     % which animals have been changed
     gap_before = (isnan(handles.Tracking.X));
-    
+
     if get(handles.cb_interpolateAll , 'Value')
-        
+
         % Fill NaNs
         handles.Tracking.X(startFill:stopFill, :) = fillmissing(handles.Tracking.X(startFill:stopFill, :), FillMethod);
         handles.Tracking.Y(startFill:stopFill, :) = fillmissing(handles.Tracking.Y(startFill:stopFill, :), FillMethod);
-        
+
         % Get remaining gaps
         gap_after = (isnan(handles.Tracking.X));
-        
+
     else
         % Get currently selected animal
         currAni = get(handles.pop_aniList, 'Value');
-        
+
         % Fill NaNs
         handles.Tracking.X(startFill:stopFill, currAni) = fillmissing(handles.Tracking.X(startFill:stopFill, currAni), FillMethod);
         handles.Tracking.Y(startFill:stopFill, currAni) = fillmissing(handles.Tracking.Y(startFill:stopFill, currAni), FillMethod);
-        
+
         % Get remaining gaps
         gap_after = (isnan(handles.Tracking.X));
-        
+
     end
-    
+
     % Keep track of manual annotation by ompareing states before and
     % after filling gaps.
     handles.Tracking.Manual(find(gap_before~=gap_after)) = 1;
-    
+
     % Update figure
     handles.CurrFrame = stopFill;
     handles = updateFigure(handles);
-    
+
 else
     beep
     msgbox({'Start and stop frame must be integer numbers'; 'and the start frame has to be smaller than the stop frame'}, 'Invalid input', 'error');
@@ -1600,13 +1678,13 @@ set(hObject, 'BackgroundColor', [1 0.65 0.4])
 % If the BG for the current trial has been calculated before, ask user to
 % import it
 if isfile([handles.CurrFilePath, handles.CurrTrial, '_BG.mat'])
-    
+
     % Create question dialog box
     answer = questdlg({'A previously calculated BG has been found.'; 'Do you want to load it?'}, ...
         'Load Back Ground', ...
         'Yes','No','Yes');
     LoadBG = strcmp(answer,'Yes');
-    
+
 else
     LoadBG = 0;
 end% if load old BG
@@ -1615,15 +1693,15 @@ if LoadBG
     % Load BG
     load([handles.CurrFilePath, handles.CurrTrial, '_BG'])
 else
-    
-    
+
+
     % Get settings set by user (e.g. invert image, subtract background, etc)
     SET.FlatField = get(handles.cb_flatfield, 'Value');
     SET.FlatField_sigma = str2double(get(handles.ed_flatfield_sigma, 'String'));
     SET.Haze = get(handles.cb_reduce_haze, 'Value');
     SET.Contrast = get(handles.cb_adjust_contrast, 'Value');
     SET.Sharpen = get(handles.cb_sharpen, 'Value');
-    
+
     % Get step size
     if contains(get(handles.ed_fraction_for_BG, 'String'), ':')
         Steps = eval(get(handles.ed_fraction_for_BG, 'String'));
@@ -1632,76 +1710,52 @@ else
         Steps = str2double(get(handles.ed_fraction_for_BG, 'String'));
         BG_Frames = 1:Steps:handles.Video.NrFrames;
     end
-    
+
     % Preallocation
-    BG = zeros(...
-        handles.Video.Obj.Height,...
-        handles.Video.Obj.Width);
-    
+    BG = zeros(size(prepareFrame(handles, 1)));
+
     % Indicate that something is happening
     f = waitbar(0,'Please wait...');
-    
-    
+
+
     cnt_frame = 0;
     for iFrame = BG_Frames
-        
-        
-        %         % Read current frame
-        %         frame = read(handles.Video.Obj, iFrame);
-        %         % Comprise RGB layers into one
-        %         if size(frame, 3) > 1
-        %             frame = rgb2gray(frame);
-        %         end
-        %
-        %         % Image processing
-        %         if SET.FlatField
-        %             frame = imflatfield(frame,SET.FlatField_sigma);
-        %         end
-        %         if SET.Haze
-        %             frame = imreducehaze(frame);
-        %         end
-        %         if SET.Contrast
-        %             frame = imcomplement(imreducehaze(imcomplement(frame)));
-        %             frame = imadjust(frame);
-        %         end
-        %         if SET.Sharpen
-        %             frame = imsharpen(frame);
-        %         end
-        
+
         frame = prepareFrame(handles, iFrame);
-        
+
         BG = BG + double(frame);
-        
+
         % Counter
         cnt_frame = cnt_frame+1;
         waitbar(cnt_frame/length(BG_Frames), f)
-        
+
     end%iFrame
-    
+
     % Calculate the grand median BG
-    medianBG = BG/cnt_frame;
-    
+    meanBG = uint8(BG/cnt_frame);
+
     close(f)
     clear f
-    
+
 end
 
 % Maybe we need a ROI
 % Create question dialog box
 answer = questdlg('Do you want to apply a ROI?', ...
     'ROI',...
-    'No', 'Circle', 'Rectangle', 'Cirle');
+    'No', 'Circle', 'Rectangle', 'Circle');
 
 switch answer
     case 'Circle'
-        
+
         % Get indices of pixels
-        [idx(:,1), idx(:,2)] = find(medianBG>=0);
+        [idx(:,1), idx(:,2)] = find(meanBG(:,:,1)>=0);
         % Display BG
         axes(handles.ax_main)
-        imshow(uint8(medianBG))
+        imagesc(meanBG)
+        axis(handles.ax_main, 'equal', 'tight', 'off')
         % Give instructions
-        set(handles.tx_static_title, 'String', 'Click on 8 points of the cirlce')
+        set(handles.tx_static_title, 'String', 'Click on 8 points of the circle')
         % Get circle
         Par = CircleFit(fliplr(ginputBM(8, [0.25 0.25 0.25])));
         % Get old title back
@@ -1711,21 +1765,24 @@ switch answer
         dist = sqrt(sum(helper'.*helper'))';
         idx_dist = find(dist>Par(3));
         % Set all outlying pixels to zero
-        medianBG(idx_dist) = zeros(1,length(idx_dist));
+        mask = ones(size(meanBG,1), size(meanBG,2));
+        mask(idx_dist)=0;
+        meanBG = uint8(double(meanBG) .* mask);
         % Show new BG
-        imshow(uint8(medianBG))
-        
+        imagesc(meanBG)
+        axis(handles.ax_main, 'equal', 'tight', 'off')
         handles.Annotation.ROI.Type = 'Circle';
         handles.Annotation.ROI.Par = [Par(2), Par(1), Par(3)];
-        
-        
+
+
     case 'Rectangle'
-        
+
         % Get indices of pixels
-        [idx(:,1), idx(:,2)] = find(medianBG>=0);
+        [idx(:,1), idx(:,2)] = find(meanBG(:,:,1)>=0);
         % Display BG
         axes(handles.ax_main)
-        imshow(uint8(medianBG))
+        imagesc(meanBG)
+        axis(handles.ax_main, 'equal', 'tight', 'off')
         % Give instructions
         set(handles.tx_static_title, 'String', 'Click on the 2 diag. points of the rectangle')
         % Get points
@@ -1739,17 +1796,20 @@ switch answer
         max_y = max(XY(:,1));
         idx_dist = unique([find(idx(:,1) < min_x); find(idx(:,1) > max_x); find(idx(:,2) < min_y); find(idx(:,2) > max_y)]);
         % Set all outlying pixels to zero
-        medianBG(idx_dist) = zeros(1,length(idx_dist));
+        mask = ones(size(meanBG,1), size(meanBG,2));
+        mask(idx_dist)=0;
+        meanBG = uint8(double(meanBG) .* mask);
         % Show new BG
-        imshow(uint8(medianBG))
-        
+        imagesc(meanBG)
+        axis(handles.ax_main, 'equal', 'tight', 'off')
+
         handles.Annotation.ROI.Type = 'Rectangle';
         handles.Annotation.ROI.Par = [min_x, min_y, max_x-min_x, max_y-min_y];
-        
+
 end%switch
 
 % Add BG to handles
-handles.medianBG = uint8(medianBG);
+handles.meanBG = meanBG;
 
 % Indicate that operations are over
 set(hObject, 'BackgroundColor', [0.8 0.93 0.98])
@@ -1812,12 +1872,12 @@ curr.X = handles.Tracking.X;
 curr.Y = handles.Tracking.Y;
 curr.Manual = handles.Tracking.Manual;
 
-% Get first ID 
+% Get first ID
 helper = [curr.X(curr.Frame,:); curr.Y(curr.Frame,:)]' - IDs.loc(1,:);
 dist = sqrt(sum(helper'.*helper'))';
 [~, IDs.ID_1] = min(dist);
 
-% Get second ID 
+% Get second ID
 helper = [curr.X(curr.Frame,:); curr.Y(curr.Frame,:)]' - IDs.loc(2,:);
 dist = sqrt(sum(helper'.*helper'))';
 [~, IDs.ID_2] = min(dist);
@@ -1862,35 +1922,35 @@ steps = str2double(get(handles.ed_track_steps, 'String'));
 % assign new location for each animal based on a
 % nearest-neighbor-principle. In short, the new location in the
 % next frame is the centroid closest to the current centroid.
-if ~isnan(startTrack) && ~isnan(stopTrack)    
-    
+if ~isnan(startTrack) && ~isnan(stopTrack)
+
     % Correct entries
     if stopTrack > handles.Video.NrFrames; stopTrack = handles.Video.NrFrames; end
     if startTrack > handles.Video.NrFrames; startTrack = handles.Video.NrFrames; end
     if stopTrack < 0 stopTrack = 1; end
-    if startTrack < 0 startTrack = 1; end    
-    
+    if startTrack < 0 startTrack = 1; end
+
     % Be able to track both ways!
     if startTrack > stopTrack
         steps = -steps;
     end
-    
+
     % Iterate over selected range of frames. Use a while-loop in order to
     % be able to step back in case something didn't work out
     iFrame = startTrack;
     while (iFrame >= min([startTrack stopTrack])) && (iFrame <= max([startTrack stopTrack])-steps)
-        
-        
+
+
         % Check for stop sign
         if handles.pb_play.UserData
             break
         end% if stop
-        
+
         % Indicate tracked animals
         handles.CurrFrame = iFrame;
         handles = updateFigure(handles);
-        
-        
+
+
         % If all trackable animals should be tracked, update list of
         % current animals - It might be that some are now trackable
         % again or some are not anymore
@@ -1906,11 +1966,11 @@ if ~isnan(startTrack) && ~isnan(stopTrack)
                 currAni = [];
             end
         end
-        
-        
+
+
         % Check whethe there is anything to track in the first place
         if ~isempty(currAni)
-            
+
             SET.DoWatershed = 0;
             % Try tracking animals in the next step
             [handles, failed] = trackFcn(handles,iFrame, steps, SET, currAni);
@@ -1969,30 +2029,22 @@ if ~isnan(startTrack) && ~isnan(stopTrack)
         else
             iFrame = iFrame+steps;
         end
-        
 
         % Correct entries
         if iFrame > handles.Video.NrFrames
             iFrame = handles.Video.NrFrames;
         end
-        if iFrame > handles.Video.NrFrames
-            iFrame = handles.Video.NrFrames;
-        end
         if iFrame < 0
             iFrame = 1;
         end
-        if iFrame < 0
-            iFrame = 1;
-        end
-        
-        
+
         % Update handles structure
         guidata(hObject, handles);
-        
-        
+
+
     end%iFrame
-    
-    
+
+
 else % Wrong entries
     beep
     msgbox({'Start and stop frame must be integer numbers'; 'and the start frame has to be smaller than the stop frame'}, 'Invalid input', 'error');
@@ -2037,12 +2089,12 @@ if ~isempty(smoothAni) && SET.DoWatershed <= 0
         ani_label(cnt_label, 2) = original_label(round(handles.Tracking.Y(iFrame, smoothAni(iAni))), round(handles.Tracking.X(iFrame, smoothAni(iAni))));
         ani_label(cnt_label, 1) = smoothAni(iAni);
         cnt_label = cnt_label+1;
-    end%iAni    
-    for iAni = 1:length(smoothAni)        
+    end%iAni
+    for iAni = 1:length(smoothAni)
         if ~handles.Tracking.Manual(iFrame, smoothAni(iAni)) && sum(ani_label(:,2) == ani_label(iAni, 2))==1 && ani_label(iAni, 2) ~= 0
             handles.Tracking.X(iFrame, iAni) = original_centroid(ani_label(iAni, 2),1);
             handles.Tracking.Y(iFrame, iAni) = original_centroid(ani_label(iAni, 2),2);
-        end        
+        end
     end%iAni
     clear smoothAni ani_label cnt_label original_label original_centroid
 end
@@ -2050,7 +2102,7 @@ end
 % If needed:
 % Apply the watershed to the whole frame - more costly but
 % easier
-if SET.DoWatershed>0 
+if SET.DoWatershed>0
     set(handles.tx_static_title, 'BackgroundColor', [1 0 0])
     % --- Watershed
     D = nextFrame;
@@ -2083,16 +2135,16 @@ nextFrame_Centroids = [nextFrame_LabelsProps(1:2:end)', nextFrame_LabelsProps(2:
 
 % Check whether the next frame has any centroids. If not, go to
 % next frame.
-if ~isempty(nextFrame_Centroids)    
+if ~isempty(nextFrame_Centroids)
     AssignmentOverview = zeros(length(nextFrame_BlobIDs)-1, length(currAni));
     % Iterate over all animals and determine next position
-    for iAni = currAni        
+    for iAni = currAni
         % The the animal's current position
-        currPos = ([handles.Tracking.X(iFrame, iAni), handles.Tracking.Y(iFrame, iAni)]);        
+        currPos = ([handles.Tracking.X(iFrame, iAni), handles.Tracking.Y(iFrame, iAni)]);
         % Calculate the distances to all the centroids
         helper = nextFrame_Centroids-currPos;
         dist = sqrt(sum(helper'.*helper'))';
-        dist_norm = dist/norm(dist);        
+        dist_norm = dist/norm(dist);
         % Get animal's walking direction
         try
             % Get the estimated heading direction based on the
@@ -2114,35 +2166,35 @@ if ~isempty(nextFrame_Centroids)
         catch
             allDir_diff = ones(size(helper,1),1);
             currDir = [0 0];
-        end        
+        end
         % Get the closest centroid, scaled by direction
-        [~, idx] = min(dist_norm + dist_norm./allDir_diff + (dist>norm(currDir)*5));        
+        [~, idx] = min(dist_norm + dist_norm./allDir_diff + (dist>norm(currDir)*5));
         % Use this centroid as new location, if the next frame is
         % not tracked
         if isnan(handles.Tracking.X(iFrame+steps, iAni)) || isnan(handles.Tracking.Y(iFrame+steps, iAni))
             handles.Tracking.X(iFrame+steps, iAni) = (nextFrame_Centroids(idx, 1));
             handles.Tracking.Y(iFrame+steps, iAni) = (nextFrame_Centroids(idx, 2));
-        end        
+        end
         % Keep track which ID belongs to which blob to determine
         % crossings
-        AssignmentOverview(idx, iAni) = 1;        
+        AssignmentOverview(idx, iAni) = 1;
         clear dist allDir_diff idx helper currDir temp s3
     end%iAni
-    
+
     % Detect crossing
-    if ~isempty(find(sum(AssignmentOverview,2)==2))        
+    if ~isempty(find(sum(AssignmentOverview,2)==2))
         % Identify which IDs are crossing
         Crossing = find(sum(AssignmentOverview,2)>=2);
         CrossingIDs = [];
         for iCross = 1:length(Crossing)
             CrossingIDs = [CrossingIDs,...
                 find(AssignmentOverview(Crossing(iCross),:))];
-        end%iCross        
+        end%iCross
         % Reset tracking
         handles.Tracking.X(iFrame+steps, CrossingIDs) = NaN;
-        handles.Tracking.Y(iFrame+steps, CrossingIDs) = NaN;        
+        handles.Tracking.Y(iFrame+steps, CrossingIDs) = NaN;
         % Indicate things have failed
-        failed = 1;        
+        failed = 1;
     end%if crossing
 else
     for iAni = 1:length(currAni)
@@ -2151,8 +2203,14 @@ else
     end
 end% if has centroids
 
+
+
+
 % Style: POPUPMENU --------------------------------------------------------
 function pop_aniList_Callback(hObject, eventdata, handles)
+
+% Update figure
+handles = updateFigure(handles);
 
 % Update handles structure
 guidata(hObject, handles);
@@ -2175,22 +2233,25 @@ handles = updateFigure(handles);
 % Update handles structure
 guidata(hObject, handles);
 
-
 function pop_fillMissingMethod_Callback(hObject, eventdata, handles)
 
 % Update handles structure
 guidata(hObject, handles);
 
 
+
+
 % Style: SLIDER -----------------------------------------------------------
 function sl_main_Callback(hObject, eventdata, handles)
 
 % Update figure
-handles.CurrFrame = round(get(hObject, 'Value'), 0);
+handles.CurrFrame = round(get(hObject, 'Value'));
 handles = updateFigure(handles);
 
 % Update handles structure
 guidata(hObject, handles);
+
+
 
 
 % Style: TOGGLEBUTTON -----------------------------------------------------
@@ -2283,11 +2344,6 @@ guidata(hObject, handles);
 
 
 
-
-
-
-
-
 %--------------------------------------------------------------------------
 %                             Other functions
 %--------------------------------------------------------------------------
@@ -2366,29 +2422,31 @@ DET = xnew*xnew - xnew*Mz + Cov_xy;
 Center = [Mxz*(Myy-xnew)-Myz*Mxy , Myz*(Mxx-xnew)-Mxz*Mxy]/DET/2;
 Par = [Center+centroid , sqrt(Center*Center'+Mz+2*xnew)];
 
-
-
 function handles = CircularMasks(handles, N)
 % Display BG
 axes(handles.ax_main)
-imshow(uint8(handles.medianBG))
+imagesc(handles.meanBG)
+axis(handles.ax_main, 'equal', 'tight', 'off')
 for iMask = 1:N
     % Get indices of pixels
-    [idx(:,1), idx(:,2)] = find(~isnan(handles.medianBG));
+    [idx(:,1), idx(:,2)] = find(~isnan(handles.meanBG(:,:,1)));
     % Give instructions
     set(handles.tx_static_title, 'String', ['Click on 4 points of a cirlce for mask number ', num2str(iMask)])
     % Get circle
     Par = CircleFit(fliplr(ginputBM(4, [0.25 0.25 0.25])));
-    
+
     % Get inlying pixels
     helper = idx-[Par(1), Par(2)];
     dist = sqrt(sum(helper'.*helper'))';
     idx_dist = find(dist<Par(3));
     % Set all outlying pixels to zero
-    handles.medianBG(idx_dist) = zeros(1,length(idx_dist));
+    mask = ones(size(handles.meanBG,1), size(handles.meanBG,2));
+    mask(idx_dist) = zeros(1,length(idx_dist));
+    handles.meanBG = handles.meanBG .* mask;
     % Show new BG
-    imshow(uint8(handles.medianBG))
-    
+    imagesc(handles.meanBG)
+    axis(handles.ax_main, 'equal', 'tight', 'off')
+
     % Save mask parameters
     if ~isfield(handles, 'Annotation')
         handles.Annotation.Masks.Circular = [];
@@ -2398,21 +2456,21 @@ for iMask = 1:N
         handles.Annotation.Masks.Circular = [];
     end
     handles.Annotation.Masks.Circular = [handles.Annotation.Masks.Circular; [Par(2),Par(1),Par(3)]];
-    
+
     clear idx* Par
 end
 
 % Get old title back
 set(handles.tx_static_title, 'String', handles.CurrTrial)
 
-
 function handles = RectangularMasks(handles, N)
 % Display BG
 axes(handles.ax_main)
-imshow(uint8(handles.medianBG))
+imagesc(handles.meanBG)
+axis(handles.ax_main, 'equal', 'tight', 'off')
 for iMask = 1:N
     % Get indices of pixels
-    [idx(:,1), idx(:,2)] = find(~isnan(handles.medianBG));
+    [idx(:,1), idx(:,2)] = find(~isnan(handles.meanBG(:,:,1)));
     % Give instructions
     set(handles.tx_static_title, 'String', ['Click on the 2 diag. points of rectangle number ', num2str(iMask)])
     % Get points
@@ -2424,10 +2482,14 @@ for iMask = 1:N
     max_y = max(XY(:,1));
     idx_dist = intersect(find((idx(:,1) > min_x) & (idx(:,1) < max_x)), find((idx(:,2) > min_y) & (idx(:,2) < max_y)));
     % Set all outlying pixels to zero
-    handles.medianBG(idx_dist) = zeros(1,length(idx_dist));
+    mask = ones(size(handles.meanBG,1), size(handles.meanBG,2));
+    mask(idx_dist) = zeros(1,length(idx_dist));
+    handles.meanBG = handles.meanBG .* mask;
+
     % Show new BG
-    imshow(uint8(handles.medianBG))
-    
+    imagesc(handles.meanBG)
+    axis(handles.ax_main, 'equal', 'tight', 'off')
+
     % Save mask parameters
     if ~isfield(handles, 'Annotation')
         handles.Annotation.Masks.Rectangular = [];
@@ -2437,22 +2499,18 @@ for iMask = 1:N
         handles.Annotation.Masks.Rectangular = [];
     end
     handles.Annotation.Masks.Rectangular = [handles.Annotation.Masks.Rectangular; min_x, min_y, max_x-min_x, max_y-min_y];
-    
+
     clear idx* min*
 end
 
 % Get old title back
 set(handles.tx_static_title, 'String', handles.CurrTrial)
 
-
-
 function [frame, originalFrame] = prepareFrame(handles, CurrFrame)
 
 
 if handles.Tracking.PrecompBlobs.Logical && get(handles.cb_use_gen_blobs, 'Value')
-    
-
-    try        
+    try
         fseek(handles.fid, handles.Tracking.PrecompBlobs.Lines(CurrFrame), 'bof');
         C = fgetl(handles.fid);
         C = eval(['[',C,']']);
@@ -2460,8 +2518,8 @@ if handles.Tracking.PrecompBlobs.Logical && get(handles.cb_use_gen_blobs, 'Value
         frame(C) = 255;
         fail=0;
         %         fclose(fid);
-        
-        % Enable watershed   
+
+        % Enable watershed
         originalFrame = frame;
         if get(handles.tg_watershed, 'Value')
             D = frame;
@@ -2472,17 +2530,14 @@ if handles.Tracking.PrecompBlobs.Logical && get(handles.cb_use_gen_blobs, 'Value
             frame = L>0;
             clear D L
         end
-        
         return
     catch
         fail=1;
     end
-    
 end
 
 if ~get(handles.cb_use_gen_blobs, 'Value') || (~handles.Tracking.PrecompBlobs.Logical || fail)
-    % Load frame
-    frame = uint8(rgb2gray(undistortImage(read(handles.Video.Obj, CurrFrame), handles.cameraParams)));
+    frame = read(handles.Video.Obj, CurrFrame);
     originalFrame = frame;
 end
 
@@ -2507,7 +2562,7 @@ end
 % Get BG (either dummy variable or calculated) ... if needed
 if SET.SubtractBG
     % Get either dummy variable or calculated
-    BG = handles.medianBG;
+    BG = handles.meanBG;
 end% If BG is needed
 
 
@@ -2551,38 +2606,37 @@ if SET.Haze
 end
 if SET.Contrast
     frame = imcomplement(imreducehaze(imcomplement(frame)));
-    frame = imadjust(frame);
+    frame = cat(3, imadjust(frame(:,:,1)), imadjust(frame(:,:,2)), imadjust(frame(:,:,3)));
 end
 if SET.Sharpen
     frame = imsharpen(frame);
 end
-
 if SET.InvertIMG
     % Invert frame
     frame = uint8(abs(double(frame)-255));
 end
 
 if SET.SubtractBG
-    
+
     % Invert BG
     if SET.InvertIMG
         BG = uint8(abs(double(BG)-255));
     end
-    
+
     % Subtract BG from frame
-    frame = double(frame)-double(BG);
+    frame = mean(double(frame)-double(BG),3);
+    if SET.Threshold == 0
+        disp(['Suggested threshold: ', num2str(graythresh(frame))])
+    end
     % Check whether to apply a threshold
     if ~isnan(SET.Threshold) && SET.Threshold > 0
-        
         frame = frame > (SET.Threshold*255);
-        
         frame = imfill(frame,'holes');
-        
         % Applay erosion and dilation
         frame = imerode(frame, SET.Erode1);
         frame = imdilate(frame, SET.Dilate);
         frame = imerode(frame, SET.Erode2);
-        
+
         if get(handles.tg_watershed, 'Value')
             D = frame;
             D = bwdist(~D);
@@ -2592,17 +2646,12 @@ if SET.SubtractBG
             frame = L>0;
             clear D L
         end
-        
-        frame = frame*255;
     end%if threshold
     frame = uint8(frame);
-    
     if ~get(handles.tg_watershed, 'Value')
         originalFrame = frame;
     end
 end
-
-
 
 function handles = UnlockOptions(handles, Commmad)
 % Enables and disables options/buttons/etc of the gui depending on the
@@ -2665,7 +2714,7 @@ switch Commmad
         set(handles.pb_auto_assign,         'Enable', 'off')
         set(handles.pop_aniList,            'Enable', 'off')
         set(handles.pb_delete_ID,           'Enable', 'off')
-        
+
     case 'VideoLoaded'
         % --- ONpb_
         set(handles.tg_invertIMG,           'Enable', 'on')
@@ -2714,7 +2763,7 @@ switch Commmad
         set(handles.tg_watershed,           'Enable', 'off')
         set(handles.pb_generate_blobs,      'Enable', 'off')
         set(handles.pb_auto_assign,         'Enable', 'off')
-        
+
     case 'NumOfAniSet'
         set(handles.cb_deleteAll,           'Enable', 'on')
         set(handles.cb_interpolateAll,      'Enable', 'on')
@@ -2760,7 +2809,7 @@ switch Commmad
         set(handles.tg_watershed,           'Enable', 'off')
         set(handles.pb_generate_blobs,      'Enable', 'off')
         set(handles.pb_auto_assign,         'Enable', 'off')
-        
+
     case 'BackgroundLoaded'
         % --- ON
         set(handles.cb_deleteAll,           'Enable', 'on')
@@ -2809,7 +2858,7 @@ switch Commmad
         set(handles.ed_threshold,           'Enable', 'off')
         set(handles.pb_track,               'Enable', 'off')
         set(handles.pb_auto_assign,         'Enable', 'off')
-        
+
     case 'BackgroundSubtracted'
         % --- ON
         set(handles.cb_deleteAll,           'Enable', 'on')
@@ -2859,7 +2908,7 @@ switch Commmad
         set(handles.pb_delete_ID,           'Enable', 'on')
         % --- OFF
         % /
-        
+
     case 'BackgroundNotSubtracted'
         % --- ON
         set(handles.cb_deleteAll,           'Enable', 'on')
@@ -2908,7 +2957,7 @@ switch Commmad
         set(handles.ed_threshold,           'Enable', 'off')
         set(handles.pb_track,               'Enable', 'off')
         set(handles.pb_auto_assign,         'Enable', 'off')
-        
+
 end
 
 function Centroids = GetCentroids(frame)
