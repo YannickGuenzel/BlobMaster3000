@@ -447,6 +447,9 @@ set(handles.ed_genBlob_region, 'String', ['[1:1:', num2str(handles.Video.NrFrame
 % Already create background variable
 handles.meanBG = zeros(handles.Video.Obj.Width, handles.Video.Obj.Height, 3);
 
+% Set initial mask
+handles.ROI_Mask = uint8(ones(handles.Video.Obj.Height, handles.Video.Obj.Width, 3));
+
 % Indicate that something is happening
 waitbar(0.5, f); pause(0.1)
 
@@ -1773,7 +1776,7 @@ switch answer
         axis(handles.ax_main, 'equal', 'tight', 'off')
         handles.Annotation.ROI.Type = 'Circle';
         handles.Annotation.ROI.Par = [Par(2), Par(1), Par(3)];
-
+        handles.ROI_Mask = uint8(cat(3, mask, mask, mask));
 
     case 'Rectangle'
 
@@ -1802,9 +1805,13 @@ switch answer
         % Show new BG
         imagesc(meanBG)
         axis(handles.ax_main, 'equal', 'tight', 'off')
-
         handles.Annotation.ROI.Type = 'Rectangle';
         handles.Annotation.ROI.Par = [min_x, min_y, max_x-min_x, max_y-min_y];
+        handles.ROI_Mask = uint8(cat(3, mask, mask, mask));
+    otherwise
+        
+        % Just uses ones as a mask
+        handles.ROI_Mask = uint8(ones(size(meanBG,1), size(meanBG,2), 3));
 
 end%switch
 
@@ -2616,6 +2623,9 @@ if SET.InvertIMG
     frame = uint8(abs(double(frame)-255));
 end
 
+% Apply ROI mask
+frame = frame .* handles.ROI_Mask;
+
 if SET.SubtractBG
 
     % Invert BG
@@ -2624,14 +2634,15 @@ if SET.SubtractBG
     end
 
     % Subtract BG from frame
-    frame = mean(double(frame)-double(BG),3);
+    frame = imabsdiff(frame, BG);
+    frame = double(im2gray(frame));
     if SET.Threshold == 0
-        disp(['Suggested threshold: ', num2str(graythresh(frame))])
+        t = multithresh(frame,5);
+        disp(['Suggested threshold: ', num2str(t(2)/255)])
     end
     % Check whether to apply a threshold
     if ~isnan(SET.Threshold) && SET.Threshold > 0
         frame = frame > (SET.Threshold*255);
-        frame = imfill(frame,'holes');
         % Applay erosion and dilation
         frame = imerode(frame, SET.Erode1);
         frame = imdilate(frame, SET.Dilate);
