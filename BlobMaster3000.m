@@ -2449,7 +2449,7 @@ for iMask = 1:N
     % Set all outlying pixels to zero
     mask = ones(size(handles.meanBG,1), size(handles.meanBG,2));
     mask(idx_dist) = zeros(1,length(idx_dist));
-    handles.meanBG = handles.meanBG .* mask;
+    meanBG = uint8(double(meanBG) .* mask);
     % Show new BG
     imagesc(handles.meanBG)
     axis(handles.ax_main, 'equal', 'tight', 'off')
@@ -2491,7 +2491,7 @@ for iMask = 1:N
     % Set all outlying pixels to zero
     mask = ones(size(handles.meanBG,1), size(handles.meanBG,2));
     mask(idx_dist) = zeros(1,length(idx_dist));
-    handles.meanBG = handles.meanBG .* mask;
+    meanBG = uint8(double(meanBG) .* mask);
 
     % Show new BG
     imagesc(handles.meanBG)
