@@ -432,7 +432,7 @@ guidata(hObject, handles);
 function mn_openVideo_Callback(hObject, eventdata, handles)
 
 % Ask the user to specify a video file
-[handles.CurrFile, handles.CurrFilePath] = uigetfile({'*.mp4'; '*.avi'}, 'Select a video file');
+[handles.CurrFile, handles.CurrFilePath] = uigetfile({'*.mp4;*.avi'}, 'Select a video file');
 
 f = waitbar(0, {'Please wait while we create a video object to'; 'read video data from the file specified...'});
 
@@ -449,6 +449,7 @@ handles.meanBG = zeros(handles.Video.Obj.Width, handles.Video.Obj.Height, 3);
 
 % Set initial mask
 handles.ROI_Mask = uint8(ones(handles.Video.Obj.Height, handles.Video.Obj.Width, 3));
+handles.Mask_Mask = uint8(ones(handles.Video.Obj.Height, handles.Video.Obj.Width, 1));
 
 % Indicate that something is happening
 waitbar(0.5, f); pause(0.1)
@@ -490,13 +491,6 @@ else
     set(handles.cb_use_gen_mask, 'Enable', 'off');
 end
 
-% Check whether there is an calibration
-if isfile([handles.CurrFilePath, handles.CurrTrial, '_CamCalib.mat'])
-    cameraParams = load([handles.CurrFilePath, handles.CurrTrial, '_CamCalib.mat'], 'cameraParams');
-    handles.cameraParams = cameraParams.cameraParams;
-else
-    handles.cameraParams = cameraParameters;
-end
 
 % Create dummy variable for ID pos
 handles.Tracking.X = nan(handles.Video.NrFrames, 1);
@@ -2434,6 +2428,18 @@ function handles = CircularMasks(handles, N)
 axes(handles.ax_main)
 imagesc(handles.meanBG)
 axis(handles.ax_main, 'equal', 'tight', 'off')
+
+% Save mask parameters
+if ~isfield(handles, 'Annotation')
+    handles.Annotation.Masks.Circular = [];
+elseif ~isfield(handles.Annotation, 'Masks')
+    handles.Annotation.Masks.Circular = [];
+elseif ~isfield(handles.Annotation.Masks, 'Circular')
+    handles.Annotation.Masks.Circular = [];
+end
+handles.Annotation.Masks.Circular = [];
+handles.Mask_Mask = uint8(ones(handles.Video.Obj.Height, handles.Video.Obj.Width, 1));
+
 for iMask = 1:N
     % Get indices of pixels
     [idx(:,1), idx(:,2)] = find(~isnan(handles.meanBG(:,:,1)));
@@ -2446,22 +2452,14 @@ for iMask = 1:N
     helper = idx-[Par(1), Par(2)];
     dist = sqrt(sum(helper'.*helper'))';
     idx_dist = find(dist<Par(3));
-    % Set all outlying pixels to zero
-    mask = ones(size(handles.meanBG,1), size(handles.meanBG,2));
-    mask(idx_dist) = zeros(1,length(idx_dist));
-    meanBG = uint8(double(meanBG) .* mask);
-    % Show new BG
-    imagesc(handles.meanBG)
-    axis(handles.ax_main, 'equal', 'tight', 'off')
+    % Set all outlying pixels to zero    
+    handles.Mask_Mask(idx_dist) = zeros(1,length(idx_dist));
 
-    % Save mask parameters
-    if ~isfield(handles, 'Annotation')
-        handles.Annotation.Masks.Circular = [];
-    elseif ~isfield(handles.Annotation, 'Masks')
-        handles.Annotation.Masks.Circular = [];
-    elseif ~isfield(handles.Annotation.Masks, 'Circular')
-        handles.Annotation.Masks.Circular = [];
-    end
+    % Show new BG
+    imagesc(handles.meanBG .* handles.Mask_Mask)
+    axis(handles.ax_main, 'equal', 'tight', 'off')
+    
+    % Save info
     handles.Annotation.Masks.Circular = [handles.Annotation.Masks.Circular; [Par(2),Par(1),Par(3)]];
 
     clear idx* Par
@@ -2475,6 +2473,17 @@ function handles = RectangularMasks(handles, N)
 axes(handles.ax_main)
 imagesc(handles.meanBG)
 axis(handles.ax_main, 'equal', 'tight', 'off')
+
+% Save mask parameters
+if ~isfield(handles, 'Annotation')
+    handles.Annotation.Masks.Rectangular = [];
+elseif ~isfield(handles.Annotation, 'Masks')
+    handles.Annotation.Masks.Rectangular = [];
+elseif ~isfield(handles.Annotation.Masks, 'Rectangular')
+    handles.Annotation.Masks.Rectangular = [];
+end
+handles.Annotation.Masks.Rectangular = [];
+handles.Mask_Mask = uint8(ones(handles.Video.Obj.Height, handles.Video.Obj.Width, 1));
 for iMask = 1:N
     % Get indices of pixels
     [idx(:,1), idx(:,2)] = find(~isnan(handles.meanBG(:,:,1)));
@@ -2488,23 +2497,13 @@ for iMask = 1:N
     min_y = min(XY(:,1));
     max_y = max(XY(:,1));
     idx_dist = intersect(find((idx(:,1) > min_x) & (idx(:,1) < max_x)), find((idx(:,2) > min_y) & (idx(:,2) < max_y)));
-    % Set all outlying pixels to zero
-    mask = ones(size(handles.meanBG,1), size(handles.meanBG,2));
-    mask(idx_dist) = zeros(1,length(idx_dist));
-    handles.meanBG = uint8(double(handles.meanBG) .* mask);
+    % Set pixels within the mask to zero
+    handles.Mask_Mask(idx_dist) = zeros(1,length(idx_dist));
 
     % Show new BG
-    imagesc(handles.meanBG)
+    imagesc(handles.meanBG .* handles.Mask_Mask)
     axis(handles.ax_main, 'equal', 'tight', 'off')
 
-    % Save mask parameters
-    if ~isfield(handles, 'Annotation')
-        handles.Annotation.Masks.Rectangular = [];
-    elseif ~isfield(handles.Annotation, 'Masks')
-        handles.Annotation.Masks.Rectangular = [];
-    elseif ~isfield(handles.Annotation.Masks, 'Rectangular')
-        handles.Annotation.Masks.Rectangular = [];
-    end
     handles.Annotation.Masks.Rectangular = [handles.Annotation.Masks.Rectangular; min_x, min_y, max_x-min_x, max_y-min_y];
 
     clear idx* min*
@@ -2570,6 +2569,7 @@ end
 if SET.SubtractBG
     % Get either dummy variable or calculated
     BG = handles.meanBG;
+    BG = BG .* handles.ROI_Mask .* handles.Mask_Mask;
 end% If BG is needed
 
 
@@ -2623,14 +2623,14 @@ if SET.InvertIMG
     frame = uint8(abs(double(frame)-255));
 end
 
-% Apply ROI mask
-frame = frame .* handles.ROI_Mask;
+% Apply ROI mask and mask mask
+frame = frame .* handles.ROI_Mask .* handles.Mask_Mask;
 
 if SET.SubtractBG
 
     % Invert BG
     if SET.InvertIMG
-        BG = uint8(abs(double(BG)-255));
+        BG = uint8(abs(double(BG)-255));        
     end
 
     % Subtract BG from frame
